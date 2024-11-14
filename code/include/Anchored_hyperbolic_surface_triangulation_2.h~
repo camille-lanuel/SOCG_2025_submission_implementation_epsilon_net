@@ -1,0 +1,756 @@
+#ifndef CGAL_ANCHORED_HYPERBOLIC_SURFACE_TRIANGULATION_2
+#define CGAL_ANCHORED_HYPERBOLIC_SURFACE_TRIANGULATION_2
+
+#include <CGAL/Hyperbolic_surface_triangulation_2.h>
+#include <CGAL/Hyperbolic_surface_traits_2.h>
+#include <CGAL/Hyperbolic_isometry_2.h>
+
+#include <CGAL/Hyperbolic_Delaunay_triangulation_2.h>
+
+#include <CGAL/Gmpq.h>
+#include <CGAL/Cartesian.h>
+#include <CGAL/Algebraic_kernel_for_circles_2_2.h>
+#include <CGAL/Circular_kernel_2/Intersection_traits.h>
+#include <CGAL/Circular_kernel_2.h>
+#include <CGAL/Hyperbolic_Delaunay_triangulation_CK_traits_2.h>
+
+namespace CGAL{
+
+template<class Traits>
+struct Anchored_Combinatorial_Map_Attributes{
+	template<class CMap>
+	struct Dart_wrapper{
+		typedef Cell_attribute<CMap, Complex_without_sqrt<typename Traits::FT>> Edge_attrib;
+		typedef Cell_attribute<CMap, typename Hyperbolic_surface_triangulation_2<Traits,Anchored_Combinatorial_Map_Attributes<Traits>>::Anchor> Face_attrib;
+		typedef std::tuple<void,Edge_attrib,Face_attrib> Attributes;
+		};
+	};
+
+enum Locate_type{
+	OUTSIDE = -1,
+	VERTEX,
+	EDGE,
+	FACE
+};
+
+template<class Traits>
+class Anchored_hyperbolic_surface_triangulation_2: public Hyperbolic_surface_triangulation_2<Traits,Anchored_Combinatorial_Map_Attributes<Traits>>{
+public:
+	typedef Hyperbolic_surface_triangulation_2<Traits,Anchored_Combinatorial_Map_Attributes<Traits>>                     Base;
+	typedef Combinatorial_map<2,Anchored_Combinatorial_Map_Attributes<Traits>>                                           Combinatorial_Map;
+	typedef typename Hyperbolic_surface_triangulation_2<Traits,Anchored_Combinatorial_Map_Attributes<Traits>>::Anchor    Anchor;
+
+	// rajouté tous les typedefs du code de Loïc parce que sinon le compilo est pas content
+	typedef typename Traits::FT                                                                    	Number;
+	typedef typename Traits::Complex                                                                ComplexNumber;
+	typedef typename Traits::Hyperbolic_point_2                                                     Point;
+	typedef Hyperbolic_Delaunay_triangulation_2<Traits>                                             HDT2;
+	typedef typename Combinatorial_Map::Dart_handle                                                 Dart_handle;
+	typedef typename Combinatorial_Map::Dart_range                                                  Dart_range;
+	typedef typename Combinatorial_Map::template One_dart_per_cell_range<0>                         Vertex_range;
+	typedef typename Combinatorial_Map::template One_dart_per_cell_range<1>                         Edge_range;
+	typedef typename Combinatorial_Map::template One_dart_per_cell_range<2>                         Face_range;
+	typedef typename Combinatorial_Map::Dart_const_handle                                           Dart_const_handle;
+	typedef typename Combinatorial_Map::Dart_const_range                                            Dart_const_range;
+	typedef typename Combinatorial_Map::template One_dart_per_cell_const_range<1>                   Edge_const_range;
+	typedef typename Combinatorial_Map::template One_dart_per_cell_const_range<2>                   Face_const_range;
+	typedef Hyperbolic_isometry_2<Traits>                                                      		Isometry;
+
+	const int NB_SIDES = 3;
+	const int NULL_INDEX = -1;
+
+	//---------- constructor
+	Anchored_hyperbolic_surface_triangulation_2(const Combinatorial_Map& cmap, const typename Base::Anchor& anch);
+
+	//---------- utilities
+	Anchor& anchor(const Dart_handle dart);
+	Anchor create_anchor(const Dart_handle dart, const Point a, const Point b, const Point c) const;
+	int index_of_dart_in_anchor(const Dart_handle dart);
+	bool is_in_anchor(const Dart_handle dart, const Anchor& anch);
+	bool is_in_anchor(const Dart_handle dart);
+	Dart_handle ith_dart_of_anchor(const int i, const Anchor& anch);
+	void display_anchor_vertices(const Anchor& anch, bool round = false) const;
+	bool are_triangles_equal(const Anchor& anchor1, const Anchor& anchor2);
+	bool is_valid();
+
+	//---------- location and insertion
+	std::tuple<Locate_type, int> lies_in_anchor(const Point query, const Anchor& anch) const;
+	std::tuple<Anchor, int> locate(const Point query, const Anchor& anch);
+	std::tuple<Anchor, int> locate_non_optimal(const Point query, const Anchor& anch);
+
+	std::vector<Anchor> insert(const Point query, Anchor& anch);
+	std::vector<Anchor> insert(const Point query);
+
+	//---------- Delaunay related methods
+	void flip(Dart_handle dart);
+	int make_delaunay();
+	int delaunay_insert(const Point query, Anchor& anch);
+	int delaunay_insert(const Point query);
+
+private:
+	void set_anchors();
+	Anchor& set_new_anchor(Dart_handle dart, const Point r, const Point s, const Point t, Point const query);
+	
+	std::vector<Anchor> insert_in_face(const Point query, Anchor& anch);
+	std::vector<Anchor> insert_on_edge(const Point query, Anchor& anch);
+
+	void push_back_if_flippable(const Dart_handle dart, std::list<Dart_handle>& darts_to_flip);
+	int restore_delaunay(std::list<Dart_handle> darts_to_flip);
+};
+
+//---------- constructor
+
+template<class Traits>
+Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchored_hyperbolic_surface_triangulation_2(const Combinatorial_Map& cmap, const typename Base::Anchor& anch)
+: Base(cmap, anch)
+{       
+	set_anchors();
+}
+
+// only used in constructor
+template<class Traits>
+void Anchored_hyperbolic_surface_triangulation_2<Traits>::set_anchors()
+{
+	std::map<Dart_handle, Point> positions;  // map that will contain the computed lift of the vertex of each dart
+
+	// create a mark for visited darts
+	size_t visited_darts_mark = this->_combinatorial_map.get_new_mark();
+	this->_combinatorial_map.unmark_all(visited_darts_mark);
+
+	Point a = this->_anchor.vertices[0];
+	Point b = this->_anchor.vertices[1];
+	Point c = this->_anchor.vertices[2];
+
+	positions[this->_anchor.dart] = a;
+	positions[Base::ccw(this->_anchor.dart)] = b;
+	positions[Base::cw(this->_anchor.dart)] = c;
+	
+	Anchor current_anchor = this->_anchor;
+
+	this->_combinatorial_map.template set_attribute<2>(this->_anchor.dart,
+		this->_combinatorial_map.template create_attribute<2>(current_anchor));
+	this->_combinatorial_map.mark(this->_anchor.dart, visited_darts_mark);
+	this->_combinatorial_map.mark(Base::ccw(this->_anchor.dart), visited_darts_mark);
+	this->_combinatorial_map.mark(Base::cw(this->_anchor.dart), visited_darts_mark);
+
+	// visit each triangle
+	Dart_handle invader = this->_anchor.dart;
+	while( this->_combinatorial_map.number_of_unmarked_darts(visited_darts_mark)>0 ){
+		Dart_handle invaded = Base::opposite(invader);
+
+		if(!this->_combinatorial_map.is_marked(invaded, visited_darts_mark)){
+			this->_combinatorial_map.mark(invaded, visited_darts_mark);
+			this->_combinatorial_map.mark(Base::ccw(invaded), visited_darts_mark);
+			this->_combinatorial_map.mark(Base::cw(invaded), visited_darts_mark);
+
+			// get the positions of the vertices of the invader's triangle
+			a = positions[Base::ccw(invader)];
+			b = positions[Base::cw(invader)];
+			c = positions[invader];
+
+			ComplexNumber cross_ratio = Base::get_cross_ratio(invader);
+			CGAL_assertion(cross_ratio == Base::get_cross_ratio(invaded));
+
+			// retieve the positions of the invaded's triangle
+			positions[invaded] = a;
+			positions[Base::ccw(invaded)] = c;
+			Point d = Base::fourth_point_from_cross_ratio(a, b, c, cross_ratio);
+			positions[Base::cw(invaded)] = d;
+
+			// add the anch in the face attibute of the cmap
+			current_anchor = create_anchor(invaded, a, c, d);
+			this->_combinatorial_map.template set_attribute<2>(invaded,
+				this->_combinatorial_map.template create_attribute<2>(current_anchor));
+		}
+		invader = Base::ccw(invaded);
+	}
+
+	this->_combinatorial_map.free_mark(visited_darts_mark);
+}
+
+
+
+//---------- utilities
+
+
+template<class Traits>
+typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor& Anchored_hyperbolic_surface_triangulation_2<Traits>::anchor(const Dart_handle dart)
+{
+	return this->_combinatorial_map.template info<2>(dart);
+}
+
+template<class Traits>
+typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor Anchored_hyperbolic_surface_triangulation_2<Traits>::create_anchor(const Dart_handle dart, const Point a, const Point b, const Point c) const
+{
+	Anchor anch;
+	anch.dart = dart;
+	anch.vertices[0] = a;
+	anch.vertices[1] = b;
+	anch.vertices[2] = c;
+	return anch;
+}
+
+template<class Traits>
+int Anchored_hyperbolic_surface_triangulation_2<Traits>::index_of_dart_in_anchor(const Dart_handle dart)
+{	
+	int index = NULL_INDEX;
+	Anchor& anch = anchor(dart);
+	Dart_handle current_dart = anch.dart;
+	for(int i=0; i<NB_SIDES; i++){
+		if(current_dart==dart){
+			index = i;
+			break;
+		}
+		current_dart = Base::ccw(current_dart);
+	}
+	CGAL_assertion(index != NULL_INDEX);
+	return index;
+}
+
+template<class Traits>
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_in_anchor(const Dart_handle dart, const Anchor& anch)
+{
+	return (anchor(dart).dart == anch.dart);
+}
+
+template<class Traits>
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_in_anchor(const Dart_handle dart)
+{
+	return is_in_anchor(dart, this->_anchor);
+}
+
+template<class Traits>
+typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Dart_handle Anchored_hyperbolic_surface_triangulation_2<Traits>::ith_dart_of_anchor(const int i, const Anchor& anch)
+{	
+	Dart_handle dart = anch.dart;
+	for(int j=0; j<i; j++){
+		dart = Base::ccw(dart);
+	}
+	return dart;
+}
+
+template<class Traits>
+void Anchored_hyperbolic_surface_triangulation_2<Traits>::display_anchor_vertices(const Anchor& anch, bool round) const
+{	
+	if(round){
+		for(int i=0; i<NB_SIDES; i++){
+			std::cout << "vertex " << i << " : ";
+			std::cout << "(" << anch.vertices[i].x().to_double() << "," << anch.vertices[i].y().to_double() <<")" << std::endl;
+		}
+	} else {
+		for(int i=0; i<NB_SIDES; i++){
+			std::cout << "vertex " << i << " : ";
+			std::cout << "(" << anch.vertices[i].x() << "," << anch.vertices[i].y() <<")" << std::endl;
+		}
+	}
+}
+
+// Output: true iff the triangles described by the anchors are equal (same triangle in the cmap and same vertices in H^2)
+template<class Traits>
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::are_triangles_equal(const Anchor& anchor1, const Anchor& anchor2)
+{
+	Anchor& triangle1 = anchor(anchor1.dart);
+	Anchor& triangle2 = anchor(anchor2.dart);
+	
+	// check if anchors correspond to same triangle in the cmap
+	if (triangle1.dart != triangle2.dart){
+		return false;
+	}
+
+	// check vertices
+	bool res = true;
+	for(int i=0; i<NB_SIDES; i++){
+		bool found=false;
+		for (int j=0; j<NB_SIDES; j++){
+			if(anchor1.vertices[i]==anchor2.vertices[j]){
+				found=true;
+			}
+		}
+		res=res&&found;
+	}
+	return res;
+}
+
+template<class Traits>
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_valid()
+{
+	CGAL_assertion(Base::is_valid());
+	if (!Base::is_valid()){
+		return false;
+	}
+
+	for (typename Face_range::iterator it=this->_combinatorial_map.template one_dart_per_cell<2>().begin();
+		it!=this->_combinatorial_map.template one_dart_per_cell<2>().end(); ++it){
+		Anchor& current = anchor(it);
+		Dart_handle current_dart = current.dart;
+
+		for (int i=0; i<NB_SIDES; ++i){
+			Dart_handle opposite_dart = Base::opposite(current_dart);
+			Point c1 = current.vertices[i];
+			Point a1 = current.vertices[(i+1)%NB_SIDES];
+			Point b1 = current.vertices[(i+2)%NB_SIDES];
+			ComplexNumber cross_ratio = Base::get_cross_ratio(current_dart);
+			Point d1 = Base::fourth_point_from_cross_ratio(a1, b1, c1, cross_ratio);
+
+			int j = index_of_dart_in_anchor(opposite_dart);
+			Anchor& neighbor = anchor(opposite_dart);
+			Point a2 = neighbor.vertices[j];
+			Point c2 = neighbor.vertices[(j+1)%NB_SIDES];
+			Isometry pair_sides = isometry_pairing_the_sides<Traits>(a2, c2, a1, c1);
+			CGAL_assertion(pair_sides.evaluate(a2) == a1);
+			CGAL_assertion(pair_sides.evaluate(c2) == c1);
+
+			Point d2 = pair_sides.evaluate(anchor(opposite_dart).vertices[(j+2)%NB_SIDES]);
+			CGAL_assertion(d2==d1);
+			if (d2 != d1){
+				return false;
+			}
+
+			current_dart = Base::ccw(current_dart);
+		}
+	}
+	return true;
+}
+
+
+
+//---------- location and insertion
+
+// Output: The locate type lt of query relative to the anchor, and an index corresponding to:
+// - if lt==FACE: NULL_INDEX (= -1),
+// - if lt==EDGE: index of the edge on which query lies,
+// - if lt==VERTEX: index of the vertex on which query lies,
+// - if lt==OUTSIDE: index of the first edge such that query and the third point of the triangle lies of different sides.
+template<class Traits>
+std::tuple<Locate_type, int> Anchored_hyperbolic_surface_triangulation_2<Traits>::lies_in_anchor(const Point query, const Anchor& anch) const
+{
+	int orientations[NB_SIDES];
+	Traits gt;
+	CGAL::internal::Side_of_oriented_hyperbolic_segment_2 orientation_test = gt.side_of_oriented_hyperbolic_segment_2_object();
+	for(int i = 0; i<NB_SIDES; i++){
+		Oriented_side ori1 = orientation_test(anch.vertices[i], anch.vertices[(i+1)%NB_SIDES], query);
+		Oriented_side ori2 = orientation_test(anch.vertices[i], anch.vertices[(i+1)%NB_SIDES], anch.vertices[(i+2)%NB_SIDES]);
+		orientations[i] = ori1*ori2;  // == 1 if query lies on the same side as the 3rd vertex of the triangle, -1 if not, 0 if on geodesic line
+	}
+
+	Locate_type lt = FACE;
+	int index = NULL_INDEX;
+	for(int i=0; i<NB_SIDES; i++){
+		if(orientations[i]==-1){
+			lt = OUTSIDE;
+			index = i;
+			break;
+		}
+		if(orientations[i]==0){
+			lt = EDGE;
+			index = i;
+			if(orientations[(i+1)%NB_SIDES]==0){
+				lt = VERTEX;
+				index = (i+1)%NB_SIDES;
+				break;
+			}
+		}
+	}
+	return std::make_tuple(lt, index);
+}
+
+// Output: an anchor of the triangle in which query lies,
+// and an int corresponding to the number of traversed triangles to find it.
+template<class Traits>
+std::tuple<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor, int> Anchored_hyperbolic_surface_triangulation_2<Traits>::locate(const Point query, const Anchor& anch)
+{
+	CGAL_precondition(query.x()*query.x()+query.y()*query.y() < Number(1));
+	// CGAL_precondition(Base::is_delaunay()); 
+	// error: conversion from ‘CC_iterator<[...],true>’ to non-scalar type ‘CC_iterator<[...],false>’ requested
+	// Hyperbolic_surface_triangulation_2.h:651:75
+
+	bool found = false;
+	Anchor current = anch;
+	int count=0;
+	
+	while(!found){
+		std::tuple<Locate_type, int> location = lies_in_anchor(query, current);
+		if(std::get<0>(location)==OUTSIDE){
+			int index = std::get<1>(location);
+			Dart_handle visited_dart = current.dart;
+			for(int i=0; i<index; i++){
+				visited_dart = visited_dart = Base::ccw(visited_dart);
+			}
+			ComplexNumber cross_ratio = Base::get_cross_ratio(visited_dart);
+			Point c = current.vertices[index%NB_SIDES];
+			Point a = current.vertices[(index+1)%NB_SIDES];
+			Point b = current.vertices[(index+2)%NB_SIDES];
+			Point d = Base::fourth_point_from_cross_ratio(a, b, c, cross_ratio);
+			current = create_anchor(Base::opposite(visited_dart), a, c, d);
+			count++;
+		} else{
+			found = true;
+		}
+	}
+	return(std::tuple(current, count));
+}
+
+template<class Traits>
+std::tuple<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor, int> Anchored_hyperbolic_surface_triangulation_2<Traits>::locate_non_optimal(const Point query, const Anchor& anch)
+{       
+	CGAL_precondition(query.x()*query.x()+query.y()*query.y() < Number(1));
+
+	std::queue<Anchor> queue;
+	bool found = false;
+	Anchor current = anch;
+	int count=0;
+
+	while(!found){
+		std::tuple<Locate_type, int> location = lies_in_anchor(query, current);
+		if(std::get<0>(location)==OUTSIDE){
+			Dart_handle visited_dart=current.dart;
+			Anchor neighbor;
+			for (int i=0; i<NB_SIDES; i++){
+				ComplexNumber cross_ratio = Base::get_cross_ratio(visited_dart);
+				Point c=current.vertices[i%NB_SIDES];
+				Point a=current.vertices[(i+1)%NB_SIDES];
+				Point b=current.vertices[(i+2)%NB_SIDES];
+				Point d=Base::fourth_point_from_cross_ratio(a, b, c, cross_ratio);
+				neighbor = create_anchor(Base::opposite(visited_dart), a, c, d);
+				queue.push(neighbor);
+				visited_dart=Base::ccw(visited_dart);
+			}
+			queue.pop();
+			current = queue.front();
+			count++;
+		} else{
+			found = true;
+		}
+	}
+	return std::tuple(current, count);
+}
+
+// Input: dart whose cross-ratio is those of the edge [r, t] and is computed with s and a fourth vertex.
+// Output: modified anch such that its vertices are {r, query, t} and its dart represents the edge between r and t.
+// The cross-ratio of the edge [r, t] is updated with its value where query is replaced by s.
+// Warning: the other cross-ratios are not updated, they will be in insert_on_edge and insert_in_face
+template<class Traits>
+typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor& Anchored_hyperbolic_surface_triangulation_2<Traits>::set_new_anchor(Dart_handle dart, const Point r, const Point s, const Point t, Point const query)
+{	
+	bool is_triangulation_anchor = is_in_anchor(dart);
+
+	// compute new cross-ratio
+	ComplexNumber old_cr = Base::get_cross_ratio(dart);
+	Point u = Base::fourth_point_from_cross_ratio(r, s, t, old_cr);
+	ComplexNumber new_cr = Base::cross_ratio(r, query, t, u);
+
+	// modify anch and cross-ratio
+	Anchor& anch = anchor(dart);
+	anch.dart = dart;
+	this->_combinatorial_map.template info<1>(dart) = new_cr;
+	CGAL_assertion(this->_combinatorial_map.template info<1>(anch.dart)==new_cr);
+	anch.vertices[0] = t;
+	anch.vertices[1] = r;
+	anch.vertices[2] = query;
+	this->_combinatorial_map.template info<2>(dart) = anch;
+
+	if(is_triangulation_anchor){
+   		this->_anchor = anch;
+   	}
+
+	return anch;
+}
+
+// Output: the three anchors incident to query after its insertion inside anch.
+// Note to self: No need to manage triangulation's anch as it is done in set_new_anchor.
+template<class Traits>
+std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert_in_face(const Point query, Anchor& anch)
+{       
+	std::tuple<Locate_type, int> locate_res = lies_in_anchor(query, anch);
+	Locate_type lt = std::get<0>(locate_res);
+	int index = std::get<1>(locate_res);
+	CGAL_precondition(lt==FACE);
+	
+	Dart_handle current_dart = anch.dart;
+	this->_combinatorial_map.insert_cell_0_in_cell_2(anch.dart);
+	std::vector<Anchor> new_anchors;
+	for(int i=0; i<NB_SIDES; i++){
+		Point c = anch.vertices[i];
+		Point a = anch.vertices[(i+1)%NB_SIDES];
+		Point b = anch.vertices[(i+2)%NB_SIDES];
+		new_anchors.push_back(set_new_anchor(current_dart, a, b, c, query));
+		this->_combinatorial_map.template set_attribute<1>(Base::ccw(current_dart),
+			this->_combinatorial_map.template create_attribute<1>(Base::cross_ratio(query, c, a, b)));
+		current_dart = Base::ccw(Base::opposite(Base::ccw(current_dart)));
+	}
+
+	return new_anchors;
+}
+
+// Output: the four anchors incident to query after its insertion on one edge of anch.
+template<class Traits>
+std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert_on_edge(const Point query, Anchor& anch)
+{
+	std::tuple<Locate_type, int> locate_res = lies_in_anchor(query, anch);
+	Locate_type lt = std::get<0>(locate_res);
+	int index = std::get<1>(locate_res);
+	CGAL_precondition(lt==EDGE);
+
+	// find dart on which we insert query
+	Dart_handle insertion_dart = ith_dart_of_anchor(index, anch);
+
+	// gather information
+	bool need_to_change_t_anchor = (is_in_anchor(insertion_dart) || is_in_anchor(Base::opposite(insertion_dart)));
+	std::vector<Anchor> new_anchors;
+	Point c = anch.vertices[index];
+	Point a = anch.vertices[(index+1)%NB_SIDES];
+	Point b = anch.vertices[(index+2)%NB_SIDES];
+	ComplexNumber cross_ratio = Base::get_cross_ratio(insertion_dart);
+	Point d = Base::fourth_point_from_cross_ratio(a, b, c, cross_ratio);
+	CGAL_assertion(d.x()*d.x()+d.y()*d.y() < Number(1));
+	Dart_handle dart_ab = Base::ccw(insertion_dart);
+	Dart_handle dart_bc = Base::ccw(dart_ab);
+	Dart_handle dart_cd = Base::ccw(Base::opposite(insertion_dart));
+	Dart_handle dart_da = Base::ccw(dart_cd);
+
+	// insert vertex on edge in the cmap and create new triangles
+	this->_combinatorial_map.insert_cell_0_in_cell_1(insertion_dart);
+	this->_combinatorial_map.insert_cell_1_in_cell_2(dart_bc, Base::cw(dart_ab));
+	this->_combinatorial_map.insert_cell_1_in_cell_2(dart_da, Base::cw(dart_cd));
+	CGAL_assertion(Base::ccw(dart_ab)==Base::opposite(Base::cw(dart_bc)));
+	CGAL_assertion(Base::ccw(dart_bc)==Base::opposite(Base::cw(dart_cd)));
+	CGAL_assertion(Base::ccw(dart_cd)==Base::opposite(Base::cw(dart_da)));
+	CGAL_assertion(Base::ccw(dart_da)==Base::opposite(Base::cw(dart_ab)));
+
+	// set new anchors and cross-ratios
+	new_anchors.push_back(set_new_anchor(dart_ab, b, c, a, query));
+	new_anchors.push_back(set_new_anchor(dart_bc, c, a, b, query));
+	new_anchors.push_back(set_new_anchor(dart_cd, d, a, c, query));
+	new_anchors.push_back(set_new_anchor(dart_da, a, c, d, query));
+	this->_combinatorial_map.template set_attribute<1>(Base::ccw(dart_ab),
+		this->_combinatorial_map.template create_attribute<1>(Base::cross_ratio(query, a, b, c)));
+	this->_combinatorial_map.template set_attribute<1>(Base::ccw(dart_bc),
+		this->_combinatorial_map.template create_attribute<1>(Base::cross_ratio(query, b, c, d)));
+	this->_combinatorial_map.template set_attribute<1>(Base::ccw(dart_cd),
+		this->_combinatorial_map.template create_attribute<1>(Base::cross_ratio(query, c, d, a)));
+	this->_combinatorial_map.template set_attribute<1>(Base::ccw(dart_da),
+		this->_combinatorial_map.template create_attribute<1>(Base::cross_ratio(query, d, a, b)));
+
+	if(need_to_change_t_anchor){
+		this->_anchor = anchor(dart_ab);
+	}
+
+	return new_anchors;
+}
+
+template<class Traits>
+std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert(const Point query, Anchor& anch)
+{
+	Anchor locate_anchor = std::get<0>(locate(query, anch));
+	Locate_type lt = std::get<0>(lies_in_anchor(query, locate_anchor));
+	CGAL_precondition(lt!=OUTSIDE);
+
+	std::vector<Anchor> new_anchors;
+	if(lt==FACE){
+		new_anchors = insert_in_face(query, locate_anchor);
+	} else if(lt==EDGE){
+		new_anchors = insert_on_edge(query, locate_anchor);
+	}
+	return new_anchors;
+}
+
+template<class Traits>
+std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert(const Point query)
+{
+	return insert(query, this->_anchor);
+}
+
+
+
+//---------- Delaunay related methods
+
+
+template<class Traits>
+void Anchored_hyperbolic_surface_triangulation_2<Traits>::flip(Dart_handle dart)
+{
+	CGAL_precondition(is_valid());
+
+	// first gather all the information needed
+	Dart_handle a = Base::opposite(dart);  // get a fresh handle
+	Dart_handle b = Base::ccw(a);
+	Dart_handle c = Base::cw(a);
+	Anchor& neighbor = anchor(a);
+
+	Dart_handle d = Base::opposite(a);  // == dart
+	Dart_handle e = Base::ccw(d);
+	Dart_handle f = Base::cw(d);
+	Anchor& anch = anchor(d);
+
+	bool need_to_change_t_anchor = (is_in_anchor(a) || is_in_anchor(d));
+
+	ComplexNumber cross_ratio_AB = Base::get_cross_ratio(e);
+	ComplexNumber cross_ratio_BC = Base::get_cross_ratio(f);
+	ComplexNumber cross_ratio_CD = Base::get_cross_ratio(b);
+	ComplexNumber cross_ratio_DA = Base::get_cross_ratio(c);
+	ComplexNumber cross_ratio_AC = Base::get_cross_ratio(a);
+
+	int index = index_of_dart_in_anchor(dart);
+	Point C = anch.vertices[index];
+	Point A = anch.vertices[(index+1)%NB_SIDES];
+	Point B = anch.vertices[(index+2)%NB_SIDES];
+	Point D = Base::fourth_point_from_cross_ratio(A, B, C, cross_ratio_AC);
+	CGAL_assertion(D.x()*D.x()+D.y()*D.y() < Number(1));
+
+	// create the new anchors
+	Anchor new_anchor = create_anchor(f, B, C, D);
+	Anchor new_neighbor = create_anchor(c, D, A, B);
+
+	// modify the vertices of the anchors
+	// if (neighbor.dart == a){
+    // 	neighbor.dart = e;
+    // 	neighbor.vertices[1] = Base::fourth_point_from_cross_ratio(neighbor.vertices[1], neighbor.vertices[2], neighbor.vertices[0], cross_ratio_AC);
+   	// } else if (neighbor.dart == b){
+    // 	neighbor.vertices[2] = Base::fourth_point_from_cross_ratio(neighbor.vertices[0], neighbor.vertices[1], neighbor.vertices[2], cross_ratio_AC);
+   	// } else if (neighbor.dart == c){
+    // 	neighbor.vertices[2] = Base::fourth_point_from_cross_ratio(neighbor.vertices[2], neighbor.vertices[0], neighbor.vertices[1], cross_ratio_AC);
+   	// }
+
+	// if (anch.dart == d){
+    // 	anch.dart = b;
+    // 	anch.vertices[1] = Base::fourth_point_from_cross_ratio(anch.vertices[1], anch.vertices[2], anch.vertices[0], cross_ratio_AC);
+   	// } else if (anch.dart == e){
+    // 	anch.vertices[2] = Base::fourth_point_from_cross_ratio(anch.vertices[0], anch.vertices[1], anch.vertices[2], cross_ratio_AC);
+   	// } else if (anch.dart == f){
+    // 	anch.vertices[2] = Base::fourth_point_from_cross_ratio(anch.vertices[2], anch.vertices[0], anch.vertices[1], cross_ratio_AC);
+   	// }
+
+	// compute the new cross ratios
+	ComplexNumber one (Number(1), Number(0));
+	ComplexNumber cross_ratio_BD = (cross_ratio_AC) / ((cross_ratio_AC) - one) ;
+	ComplexNumber cross_ratio_AB_2 = one - (one - (cross_ratio_AB)) * (cross_ratio_AC) ;
+	ComplexNumber cross_ratio_BC_2 = one - (one - (cross_ratio_BC)) / (cross_ratio_BD) ;
+	ComplexNumber cross_ratio_CD_2 = one - (one - (cross_ratio_CD)) * (cross_ratio_AC) ;
+	ComplexNumber cross_ratio_DA_2 = one - (one - (cross_ratio_DA)) / (cross_ratio_BD) ;
+
+	// make the topological flip
+	this->_combinatorial_map.template unlink_beta<1>(a);
+	this->_combinatorial_map.template unlink_beta<1>(b);
+	this->_combinatorial_map.template unlink_beta<1>(c);
+
+	this->_combinatorial_map.template unlink_beta<1>(d);
+	this->_combinatorial_map.template unlink_beta<1>(e);
+	this->_combinatorial_map.template unlink_beta<1>(f);
+
+	this->_combinatorial_map.template link_beta<1>(b, a);
+	this->_combinatorial_map.template link_beta<1>(a, f);
+	this->_combinatorial_map.template link_beta<1>(f, b);
+
+	this->_combinatorial_map.template link_beta<1>(e, d);
+	this->_combinatorial_map.template link_beta<1>(d, c);
+	this->_combinatorial_map.template link_beta<1>(c, e);
+
+	CGAL_assertion(Base::opposite(a)==d);
+
+	// and give the new cross ratios to the edges
+	this->_combinatorial_map.template info<1>(a) = cross_ratio_BD;
+	this->_combinatorial_map.template info<1>(e) = cross_ratio_AB_2;
+	this->_combinatorial_map.template info<1>(f) = cross_ratio_BC_2;
+	this->_combinatorial_map.template info<1>(b) = cross_ratio_CD_2;
+	this->_combinatorial_map.template info<1>(c) = cross_ratio_DA_2;
+
+	// take care of the particular cases where we need to "flip again"
+	if (Base::opposite(e) == b){
+		this->_combinatorial_map.template info<1>(e) = one - (one - cross_ratio_AB_2) * (cross_ratio_AC) ;
+	}
+	if (Base::opposite(f) == c){
+		this->_combinatorial_map.template info<1>(f) = one - (one - cross_ratio_BC_2) / (cross_ratio_BD) ;
+	}
+   	
+   	// give the new anchors to the faces
+   	this->_combinatorial_map.template info<2>(f) = new_anchor;
+   	this->_combinatorial_map.template info<2>(c) = new_neighbor;
+   	if(need_to_change_t_anchor){
+   		this->_anchor = new_anchor;
+   	}
+
+   	CGAL_assertion(is_valid());
+}
+
+// Pushes dart in the list darts_to_flip if dart is flippable and is not already in the list
+template<class Traits>
+void Anchored_hyperbolic_surface_triangulation_2<Traits>::push_back_if_flippable(const Dart_handle dart, std::list<Dart_handle>& darts_to_flip)
+{	
+	if(Base::is_delaunay_flippable(dart)){
+		bool already_there = false;
+		for(Dart_handle dart_to_flip : darts_to_flip){
+			if(dart_to_flip==dart || dart_to_flip==Base::opposite(dart)){
+				already_there = true;
+				break;
+			}
+		}
+		if(!already_there){
+			darts_to_flip.push_back(dart);
+		}
+	}
+}
+
+// Output: number of flips done to make the triangulation Delaunay given a list of darts to flip
+template<class Traits>
+int Anchored_hyperbolic_surface_triangulation_2<Traits>::restore_delaunay(std::list<Dart_handle> darts_to_flip)
+{	
+	int number_of_flips_done = 0;
+	while(!darts_to_flip.empty()){
+		Dart_handle current_dart = darts_to_flip.front();
+		if(Base::is_delaunay_flippable(current_dart)){
+			flip(current_dart);
+			number_of_flips_done++;
+			Dart_handle maybe_flippable[4] = {Base::ccw(current_dart), Base::cw(current_dart), Base::ccw(Base::opposite(current_dart)), Base::cw(Base::opposite(current_dart))};
+			for(int i=0; i<4; i++){
+				push_back_if_flippable(maybe_flippable[i], darts_to_flip);
+			}
+		}
+		darts_to_flip.pop_front();
+	}
+
+	CGAL_assertion(is_valid());
+	CGAL_assertion(Base::is_delaunay());
+	return number_of_flips_done;
+}
+
+template<class Traits>
+int Anchored_hyperbolic_surface_triangulation_2<Traits>::make_delaunay(){
+	int number_of_flips_done = 0;
+
+	Dart_handle edge_to_flip = Base::pick_edge_to_flip();
+	while (edge_to_flip != nullptr){
+		flip(edge_to_flip);
+		edge_to_flip = Base::pick_edge_to_flip();
+		number_of_flips_done++;
+	}
+
+	CGAL_assertion(is_valid());
+	CGAL_assertion(Base::is_delaunay());
+	return number_of_flips_done;
+}
+
+// Inserts query in the triangulation, with a search starting from the given anchor, and makes the triangulation Delaunay again
+// Output: number of flips done to make the triangulation Delaunay after the insertion
+template<class Traits>
+int Anchored_hyperbolic_surface_triangulation_2<Traits>::delaunay_insert(const Point query, Anchor& anch)
+{
+	CGAL_precondition(Base::is_delaunay());
+
+	std::vector<Anchor> new_anchors = insert(query, anch);
+	std::list<Dart_handle> darts_to_flip;
+	for(int i=0; i<new_anchors.size(); i++){
+		push_back_if_flippable(new_anchors[i].dart, darts_to_flip);
+	}
+
+	return restore_delaunay(darts_to_flip);
+}
+
+// Same but the search starts from main anchor
+template<class Traits>
+int Anchored_hyperbolic_surface_triangulation_2<Traits>::delaunay_insert(const Point query)
+{
+	return delaunay_insert(query, this->_anchor);
+}
+
+}  // namespace CGAL
+
+#endif  //CGAL_ANCHORED_HYPERBOLIC_SURFACE_TRIANGULATION_2
