@@ -16,17 +16,17 @@ This repository contains all that is needed to run the code relative to the SOCG
     
     - Hyperbolic_Dirichlet_domain_2: code to compute a Dirichlet domain from fundamental domain whose vertices are the same point on the surface
   
-  - demos: two demos, used to produce the images seen in the paper (see [Execution of the demos](#execution-of-the-demos))
+  - demos: two demos, used to produce the figures seen in the paper in Sections 8 & 9 (see [Execution of the demos](#execution-of-the-demos))
   
   - benchmarks: code we used to run the benchmarks presented in the paper
 
 - results: the complete benchmarks results presented in the paper. The file results_summary.ods contains a compilation and a summary of the results (for example, the computation of the average of each indicator).
 
-# Running the project
+# Running the code
 
 ## CGAL installation
 
-We provide our version of CGAL in the "cgal" folder. It is based on an obsolete version of Loïc Dubois' CGAL branch (in the Hyperbolic_surface_triangulation_2 folder).  If you already have CGAL installed on your computer, please use our version to compile our code as it won't work with your version. You must install the [essential third party dependencies](https://doc.cgal.org/latest/Manual/thirdparty.html), as well as Qt6 to run our project.
+We provide our version of CGAL in the "cgal" folder. It is based on an obsolete version of Loïc Dubois' CGAL branch (in the Hyperbolic_surface_triangulation_2 folder). If you already have CGAL installed on your computer, please use our version to compile our code as it won't work with your version. You do not need to build CGAL to run our code, as it is a header only library. However, you must have the [essential third party dependencies](https://doc.cgal.org/latest/Manual/thirdparty.html) and Qt6 installed.
 
 ## Compilation of the demos
 

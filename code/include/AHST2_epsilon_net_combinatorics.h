@@ -155,7 +155,7 @@ void Anchored_hyperbolic_surface_triangulation_2<Traits>::set_anchors()
         while (this->_combinatorial_map.number_of_unmarked_darts(visited_darts_mark) > 0) {
                 Dart_handle invaded = Base::opposite(invader);
 
-                if (not this->_combinatorial_map.is_marked(invaded, visited_darts_mark)) {
+                if (! this->_combinatorial_map.is_marked(invaded, visited_darts_mark)) {
                         this->_combinatorial_map.mark(invaded, visited_darts_mark);
                         this->_combinatorial_map.mark(Base::ccw(invaded), visited_darts_mark);
                         this->_combinatorial_map.mark(Base::cw(invaded), visited_darts_mark);
@@ -290,7 +290,7 @@ template<class Traits>
 bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_valid()
 {
         CGAL_assertion(Base::is_valid());
-        if (not Base::is_valid()) {
+        if (!Base::is_valid()) {
                 return false;
         }
 
@@ -415,7 +415,7 @@ std::tuple<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor,
         Point d;
 
         // visibility walk
-        while (not found) {
+        while (!found) {
                 dart = Base::opposite(dart);
                 ComplexNumber cross_ratio = Base::get_cross_ratio(dart);
                 d = Base::fourth_point_from_cross_ratio(a, b, c, cross_ratio);
@@ -634,7 +634,6 @@ template<class Traits>
 std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert(const Point& query, Anchor& anch, std::vector<int>& count_locate)
 {
         auto [locate_anchor, count] = locate_visibility_walk(query, anch);
-        // Anchor locate_anchor = std::get<0>(locate_straight_walk(query, anch));
         count_locate.push_back(count);
         auto [lt, index] = lies_in_anchor(query, locate_anchor);
         CGAL_precondition(lt != OUTSIDE);
@@ -761,7 +760,7 @@ void Anchored_hyperbolic_surface_triangulation_2<Traits>::push_flippable_edge(co
                                 break;
                         }
                 }
-                if (not already_there) {
+                if (!already_there) {
                         darts_to_flip.push_back(dart);
                 }
         }
@@ -774,7 +773,7 @@ Anchored_hyperbolic_surface_triangulation_2<Traits>::restore_delaunay(std::list<
 {       
         int number_of_flips_done = 0;
         std::vector<Dart_handle> flipped_darts;  // not useless: used in epsilon-net algo
-        while (not darts_to_flip.empty()) {
+        while (!darts_to_flip.empty()) {
                 Dart_handle current_dart = darts_to_flip.front();
                 if (Base::is_delaunay_flippable(current_dart)) {
                         flip(current_dart);
@@ -881,7 +880,7 @@ template<class Traits>
 void Anchored_hyperbolic_surface_triangulation_2<Traits>::push_unmarked_triangle(const Dart_handle dart, std::list<Dart_handle>& large_triangles, size_t& large_triangles_mark)
 {
         Dart_handle comparison_dart = anchor(dart).dart;
-        if (not this->_combinatorial_map.is_marked(comparison_dart, large_triangles_mark)) {
+        if (!this->_combinatorial_map.is_marked(comparison_dart, large_triangles_mark)) {
                 large_triangles.push_back(comparison_dart);  // so that the darts in the list are exactly the marked ones
                 this->_combinatorial_map.mark(comparison_dart, large_triangles_mark);
         }
@@ -908,7 +907,7 @@ std::vector<int> Anchored_hyperbolic_surface_triangulation_2<Traits>::epsilon_ne
                 }
         }
 
-        while (not big_triangles.empty()) {
+        while (!big_triangles.empty()) {
                 Dart_handle current_dart = big_triangles.front();
                 Anchor& current_anchor = anchor(current_dart);
                 this->_combinatorial_map.unmark(current_dart, big_triangles_mark);
