@@ -10,9 +10,9 @@ This repository contains all that is needed to run the code relative to the SOCG
   
   - include: main code
     
-    - Anchored_hyperbolic_surface_triangulation_2: the class containing the data structure and the $\varepsilon$-net algorithm
+    - Anchored_hyperbolic_surface_triangulation_2: class containing the data structure and the $\varepsilon$-net algorithm
     
-    - AHST2_epsilon_net_combinatorics: a tweak of Anchored_hyperbolic_surface_triangulation_2 with additional instructions in some methods for the combinatorics benchmarks
+    - AHST2_epsilon_net_combinatorics: tweak of Anchored_hyperbolic_surface_triangulation_2 with additional instructions in some methods for the combinatorics benchmarks
     
     - Hyperbolic_Dirichlet_domain_2: code to compute a Dirichlet domain from fundamental domain whose vertices are the same point on the surface
   
@@ -20,7 +20,7 @@ This repository contains all that is needed to run the code relative to the SOCG
   
   - benchmarks: code we used to run the benchmarks presented in the paper
 
-- results: the complete benchmarks results presented in the paper. The file results_summary.ods contains a compilation and a summary of the results (for example, the computation of the average of each indicator).
+- results: the complete benchmarks results presented in the paper. The raw results are in the .txt files. The spreadsheet "results_summary.ods" contains a compilation of the results (for example, the computation of the average of each indicator).
 
 # Running the code
 
@@ -66,4 +66,4 @@ Usage:
 
 - `arg2` (default: random): seed for the surface generation (must be an integer)
 
-Runs the `epsilon_net` method with $\varepsilon$=`arg1` on a surface generated with seed `arg2`. Opens a window with a drawing of a lift of the obtained Delaunay triangulation, and <mark>TODO</mark>.
+Runs the `epsilon_net` method with $\varepsilon$=`arg1` on a surface generated with seed `arg2`. Opens a window with a drawing the obtained Delaunay triangulation drawn following a Breadth First Search algorithm, and a Dirichlet domain (see Section 9 of the paper).
