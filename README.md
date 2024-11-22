@@ -1,4 +1,4 @@
-This repository contains all that is needed to run the code relative to the SOCG 2025 submission *Implementation of An* $\varepsilon$*-Net Algorithm on Thick Hyperbolic Surfaces*. It also contains the complete results of the benchmarks cited in the paper.
+This repository contains all that is needed to run the code relative to the SOCG 2025 submission $\varepsilon$*-Net Algorithm Implementation on Hyperbolic Surfaces*. It also contains the complete results of the benchmarks cited in the paper.
 
 **It can be used only for review purpose. All credit go to the (anonymous) authors of this project.**
 
