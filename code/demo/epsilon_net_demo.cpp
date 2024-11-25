@@ -37,10 +37,6 @@ int main(int argc, char* argv[]){
 
 	// 1. GENERATE THE INPUT
 
-	// std::ifstream data("/home/clanuel/Documents/camille/cgal_camille/benchmarks/input_triangulations/input_triangulation_1000.txt");
-	// Triangulation triangulation;
-	// triangulation.from_stream(data);
-	
 	Domain domain;
 	if (argc<=2){
 		int seed = time(NULL);
@@ -55,7 +51,6 @@ int main(int argc, char* argv[]){
 	}
 	Triangulation triangulation = Triangulation(domain);
 	triangulation.make_delaunay();
-	// std::cout << triangulation.make_delaunay() << std::endl;
 
 
 	// 2. GET A VERTEX OF THE ANCHOR

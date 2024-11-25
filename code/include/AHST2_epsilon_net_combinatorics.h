@@ -5,6 +5,8 @@
 #include <CGAL/Hyperbolic_surface_traits_2.h>
 #include <CGAL/Timer.h>
 
+#include <boost/numeric/interval.hpp>
+
 
 namespace CGAL{
 
@@ -35,7 +37,7 @@ public:
         typedef typename Traits::FT                                                                     Number;
         typedef typename Traits::Complex                                                                ComplexNumber;
         typedef typename Traits::Hyperbolic_point_2                                                     Point;
-        typedef typename Traits::Hyperbolic_Voronoi_point_2                                                                                             Voronoi_point;
+        typedef typename Traits::Hyperbolic_Voronoi_point_2                                             Voronoi_point;
         typedef typename Combinatorial_Map::Dart_handle                                                 Dart_handle;
         typedef typename Combinatorial_Map::Dart_range                                                  Dart_range;
         typedef typename Combinatorial_Map::template One_dart_per_cell_range<0>                         Vertex_range;
@@ -45,7 +47,9 @@ public:
         typedef typename Combinatorial_Map::Dart_const_range                                            Dart_const_range;
         typedef typename Combinatorial_Map::template One_dart_per_cell_const_range<1>                   Edge_const_range;
         typedef typename Combinatorial_Map::template One_dart_per_cell_const_range<2>                   Face_const_range;
-        typedef Hyperbolic_isometry_2<Traits>                                                                   Isometry;
+        typedef Hyperbolic_isometry_2<Traits>                                                           Isometry;
+
+        typedef boost::numeric::interval<double>                                                        Interval;
 
         const int NB_SIDES = 3;
         const int NULL_INDEX = -1;
@@ -83,6 +87,9 @@ public:
 
         //---------- eps-net methods
         std::vector<int> epsilon_net(double epsilon);
+        bool is_epsilon_covering(const double epsilon);
+        bool is_epsilon_packing(const double epsilon);
+        bool is_epsilon_net(const double epsilon);
         
         double shortest_loop();
 
@@ -106,10 +113,7 @@ private:
         Point approx_circumcenter(const Anchor& anch) const;
         Number delta_min(const Anchor& anch, const Point& approx_center) const;
         Number delta_max(const Anchor& anch, const Point& approx_center) const;
-        void push_unmarked_triangle(const Dart_handle dart, std::list<Dart_handle>& large_triangles, size_t& large_triangles_mark);
-        bool is_epsilon_covering(const double BOUND);
-        bool is_epsilon_packing(const double BOUND);
-        bool is_epsilon_net(const double BOUND);
+        void push_triangle(const Dart_handle dart, std::list<Dart_handle>& triangles, size_t& triangles_list_mark);
 };
 
 
@@ -155,7 +159,7 @@ void Anchored_hyperbolic_surface_triangulation_2<Traits>::set_anchors()
         while (this->_combinatorial_map.number_of_unmarked_darts(visited_darts_mark) > 0) {
                 Dart_handle invaded = Base::opposite(invader);
 
-                if (! this->_combinatorial_map.is_marked(invaded, visited_darts_mark)) {
+                if (!this->_combinatorial_map.is_marked(invaded, visited_darts_mark)) {
                         this->_combinatorial_map.mark(invaded, visited_darts_mark);
                         this->_combinatorial_map.mark(Base::ccw(invaded), visited_darts_mark);
                         this->_combinatorial_map.mark(Base::cw(invaded), visited_darts_mark);
@@ -634,6 +638,7 @@ template<class Traits>
 std::vector<typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Anchor> Anchored_hyperbolic_surface_triangulation_2<Traits>::insert(const Point& query, Anchor& anch, std::vector<int>& count_locate)
 {
         auto [locate_anchor, count] = locate_visibility_walk(query, anch);
+        // auto [locate_anchor, count] = locate_straight_walk(query, anch);
         count_locate.push_back(count);
         auto [lt, index] = lies_in_anchor(query, locate_anchor);
         CGAL_precondition(lt != OUTSIDE);
@@ -877,13 +882,16 @@ typename Anchored_hyperbolic_surface_triangulation_2<Traits>::Number Anchored_hy
 }
 
 template<class Traits>
-void Anchored_hyperbolic_surface_triangulation_2<Traits>::push_unmarked_triangle(const Dart_handle dart, std::list<Dart_handle>& large_triangles, size_t& large_triangles_mark)
+void Anchored_hyperbolic_surface_triangulation_2<Traits>::push_triangle(const Dart_handle dart, std::list<Dart_handle>& triangles, size_t& triangles_list_mark)
 {
-        Dart_handle comparison_dart = anchor(dart).dart;
-        if (!this->_combinatorial_map.is_marked(comparison_dart, large_triangles_mark)) {
-                large_triangles.push_back(comparison_dart);  // so that the darts in the list are exactly the marked ones
-                this->_combinatorial_map.mark(comparison_dart, large_triangles_mark);
+        Dart_handle current_dart = dart;
+        for (int i=0; i<3; i++){
+                this->_combinatorial_map.unmark(current_dart, triangles_list_mark);
+                current_dart = Base::ccw(current_dart);
         }
+
+        this->_combinatorial_map.mark(dart, triangles_list_mark);
+        triangles.push_back(dart);
 }
 
 template<class Traits>
@@ -894,48 +902,47 @@ std::vector<int> Anchored_hyperbolic_surface_triangulation_2<Traits>::epsilon_ne
         std::vector<int> count_flips;
         
         const double BOUND = std::cosh(epsilon)-1;
-        CGAL_assertion(is_epsilon_packing(BOUND));
-        size_t big_triangles_mark = this->_combinatorial_map.get_new_mark();
+        size_t triangles_list_mark = this->_combinatorial_map.get_new_mark();
         
-        std::list<Dart_handle> big_triangles;
+        std::list<Dart_handle> triangles;
         for (typename Face_range::iterator it = this->_combinatorial_map.template one_dart_per_cell<2>().begin();
                 it != this->_combinatorial_map.template one_dart_per_cell<2>().end(); ++it) {
                 Anchor& current_anchor = anchor(it);
                 Point current_center = approx_circumcenter(current_anchor);
                 if (delta_min(current_anchor, current_center) > BOUND) {
-                        push_unmarked_triangle(it, big_triangles, big_triangles_mark);
+                        push_triangle(it, triangles, triangles_list_mark);
                 }
         }
 
-        while (!big_triangles.empty()) {
-                Dart_handle current_dart = big_triangles.front();
+        while (!triangles.empty()) {
+                Dart_handle current_dart = triangles.front();
                 Anchor& current_anchor = anchor(current_dart);
-                this->_combinatorial_map.unmark(current_dart, big_triangles_mark);
-                big_triangles.pop_front();
+                triangles.pop_front();
 
-                Point current_center = approx_circumcenter(current_anchor);
-                if (delta_min(current_anchor, current_center) > BOUND) {
-                        std::vector<Anchor> new_anchors = insert(current_center, current_anchor, count_locate);
-                        insertions++;
-                        for (Anchor anch : new_anchors) {
-                                push_unmarked_triangle(anch.dart, big_triangles, big_triangles_mark);
-                        }
+                if(this->_combinatorial_map.is_marked(current_dart, triangles_list_mark)){
+                        this->_combinatorial_map.unmark(current_dart, triangles_list_mark);
+                        Point current_center = approx_circumcenter(current_anchor);
+                        if (delta_min(current_anchor, current_center) > BOUND) {
+                                std::vector<Anchor> new_anchors = insert(current_center, current_anchor, count_locate);
+                                insertions++;
+                                for (Anchor anch : new_anchors) {
+                                        push_triangle(anch.dart, triangles, triangles_list_mark);
+                                }
 
-                        std::list<Dart_handle> darts_to_flip;
-                        for (Anchor new_anchor : new_anchors) {
-                                push_flippable_edge(new_anchor.dart, darts_to_flip);
-                        }
-                        auto [nb_flips, flipped_darts] = restore_delaunay(darts_to_flip);
-                        count_flips.push_back(nb_flips);
-                        for (Dart_handle dart : flipped_darts) {
-                                push_unmarked_triangle(dart, big_triangles, big_triangles_mark);
-                                push_unmarked_triangle(Base::opposite(dart), big_triangles, big_triangles_mark);
+                                std::list<Dart_handle> darts_to_flip;
+                                for (Anchor new_anchor : new_anchors) {
+                                        push_flippable_edge(new_anchor.dart, darts_to_flip);
+                                }
+                                auto [nb_flips, flipped_darts] = restore_delaunay(darts_to_flip);
+                                count_flips.push_back(nb_flips);
+                                for (Dart_handle dart : flipped_darts) {
+                                        push_triangle(dart, triangles, triangles_list_mark);
+                                        push_triangle(Base::opposite(dart), triangles, triangles_list_mark);
+                                }
                         }
                 }
         }
-        CGAL_assertion(is_epsilon_net(BOUND));
-        this->_combinatorial_map.free_mark(big_triangles_mark);
-        // std::cout << is_epsilon_net(BOUND) << std::endl;
+        this->_combinatorial_map.free_mark(triangles_list_mark);
 
         int total_locate = std::accumulate(count_locate.begin(), count_locate.end(), 0);
         int total_filps = std::accumulate(count_flips.begin(), count_flips.end(), 0);
@@ -950,7 +957,6 @@ std::vector<int> Anchored_hyperbolic_surface_triangulation_2<Traits>::epsilon_ne
              }
         }
         int max_flips = 0;
-        // std::cout << count_flips.front() << std::endl;
         for (int i : count_flips) {
              if (i > max_flips) {
                      max_flips = i;
@@ -961,15 +967,29 @@ std::vector<int> Anchored_hyperbolic_surface_triangulation_2<Traits>::epsilon_ne
         return res;
 }
 
+
 template<class Traits>
-bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_covering(const double BOUND)
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_covering(const double epsilon)
 {
+        Interval delta_epsilon = cosh(epsilon)-1;
         bool is_covering = true;
         for (typename Face_range::iterator it = this->_combinatorial_map.template one_dart_per_cell<2>().begin();
                 it != this->_combinatorial_map.template one_dart_per_cell<2>().end(); ++it) {
                 Anchor& current_anchor = anchor(it);
-                Point approx_center = approx_circumcenter(current_anchor);
-                if (delta_min(current_anchor, approx_center) > BOUND) {
+
+                Traits gt;
+                CGAL::internal::Construct_hyperbolic_circumcenter_CK_2<Traits> chc(gt);
+                Voronoi_point v = chc(current_anchor.vertices[0], current_anchor.vertices[1], current_anchor.vertices[2]);
+
+                Point u = current_anchor.vertices[0];
+                auto num = (u.x() - v.x()) * (u.x() - v.x()) + (u.y() - v.y()) * (u.y() - v.y());
+                auto den = (1 - (u.x() * u.x() + u.y() * u.y())) * (1 - (v.x() * v.x() + v.y() * v.y()));
+                auto d = 2 * num / den;
+
+                Sqrt_extension<Number, Number, Tag_true, Tag_true> upper_bound = Number(upper(delta_epsilon));
+                // std::cout << d << "\n" << upper_bound << std::endl;
+                // std::cout << to_double(d) << "\n" << upper(delta_epsilon) << std::endl;
+                if (d > upper_bound) {
                         is_covering = false;
                         break;
                 }
@@ -978,8 +998,9 @@ bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_covering(co
 }
 
 template<class Traits>
-bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_packing(const double BOUND)
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_packing(const double epsilon)
 {
+        Interval delta_epsilon = cosh(epsilon)-1;
         bool is_packing = true;
         for (typename Edge_range::iterator it = this->_combinatorial_map.template one_dart_per_cell<1>().begin();
                                                                                 it != this->_combinatorial_map.template one_dart_per_cell<1>().end(); ++it) {
@@ -988,7 +1009,7 @@ bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_packing(con
                 Point a = current_anchor.vertices[index];
                 Point b = current_anchor.vertices[(index + 1) % NB_SIDES];
                 
-                if (delta(a, b) < BOUND) {
+                if (delta(a, b) < lower(delta_epsilon)) {
                         is_packing = false;  // consider that it's not a packing
                         Dart_handle next = Base::ccw(it);
                         auto doc = this->_combinatorial_map.template darts_of_cell<0>(it);
@@ -1005,9 +1026,9 @@ bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_packing(con
 }
 
 template<class Traits>
-bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_net(const double BOUND)
+bool Anchored_hyperbolic_surface_triangulation_2<Traits>::is_epsilon_net(const double epsilon)
 {
-        return is_epsilon_covering(BOUND)&&is_epsilon_packing(BOUND);
+        return is_epsilon_covering(epsilon)&&is_epsilon_packing(epsilon);
 }
 
 template<class Traits>
