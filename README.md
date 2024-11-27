@@ -38,7 +38,7 @@ CGAL_DIR=../../../cgal cmake ..
 make
 ```
 
-## Execution of the demos
+## Running the demos
 
 ### epsilon_net_demo
 
