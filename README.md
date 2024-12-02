@@ -33,7 +33,7 @@ We provide our version of CGAL in the "cgal" folder. It is based on an obsolete 
 To compile the demos:
 
 ```bash
-cd path/to/CGAL_2024_submission/code/demo/build
+cd path/to/SOCG_2025_submission_implementation_epsilon_net/code/demo/build
 CGAL_DIR=../../../cgal cmake ..
 make
 ```
@@ -45,6 +45,7 @@ make
 Usage:
 
 ```bash
+cd ..  # optional - to go back to the demo folder
 ./epsilon_net_demo [arg1] [arg2]
 ```
 
@@ -59,6 +60,7 @@ Runs the `epsilon_net` method with $\varepsilon$=`arg1` on a surface generated w
 Usage:
 
 ```bash
+cd ..  # optional - to go back to the demo folder
 ./dirichlet_and_epsilon_net_demo [arg1] [arg2]
 ```
 
