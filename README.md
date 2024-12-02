@@ -26,7 +26,7 @@ This repository contains all that is needed to run the code relative to the SOCG
 
 ## CGAL installation
 
-We provide our version of CGAL in the "cgal" folder. It is based on an obsolete version of Loïc Dubois' CGAL branch (in the Hyperbolic_surface_triangulation_2 folder). If you already have CGAL installed on your computer, please use our version to compile our code as it won't work with your version. You do not need to build CGAL to run our code, as it is a header only library. However, you must have the [essential third party dependencies](https://doc.cgal.org/latest/Manual/thirdparty.html) and Qt6 installed.
+We provide our version of CGAL in the "cgal" folder. It is based on an obsolete version of Loïc Dubois' CGAL branch (in the Hyperbolic_surface_triangulation_2 folder). If you already have CGAL installed on your computer, please use our version to compile our code as it won't work with your version. You do not need to build CGAL to run our code since it is a header only library. However, you must have the [essential third party dependencies](https://doc.cgal.org/latest/Manual/thirdparty.html) and Qt6 installed.
 
 ## Compilation of the demos
 
