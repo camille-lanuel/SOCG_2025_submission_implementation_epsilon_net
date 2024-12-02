@@ -45,7 +45,7 @@ make
 Usage:
 
 ```bash
-cd ..  # optional - to go back to the demo folder
+cd ..  # to go back to the demo folder
 ./epsilon_net_demo [arg1] [arg2]
 ```
 
@@ -60,7 +60,7 @@ Runs the `epsilon_net` method with $\varepsilon$=`arg1` on a surface generated w
 Usage:
 
 ```bash
-cd ..  # optional - to go back to the demo folder
+cd ..  # to go back to the demo folder
 ./dirichlet_and_epsilon_net_demo [arg1] [arg2]
 ```
 
